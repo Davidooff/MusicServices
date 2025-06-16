@@ -1,0 +1,2 @@
+impl Future<Output = Result<Result<serde_json::Value, serde_json::Value>, Box<(dyn StdError + 'static)>>>: IntoResponse
+impl Future<Output = Result<Result<serde_json::Value, serde_json::Value>, Box<(dyn StdError + 'static)>>>

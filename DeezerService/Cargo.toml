@@ -1,0 +1,19 @@
+[package]
+name = "DeezerService"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reqwest = { version = "0.12.19", features = ["json", "stream", "cookies"] }
+tokio = { version = "1.45.1", features = ["full"] }
+dotenv = "0.15"
+dotenv_codegen = "0.15"
+redis = { version =  "0.32.0", features = ["aio", "tokio-comp"]  }
+regex = "1.11.1"
+serde_json = "1.0.140"
+axum = { version = "0.8.4" }
+serde = { version = "1.0.219", features = ["derive"] }
+blowfish = "0.9.1"
+thiserror = "2.0.12"
+url = "2.5.4"
+log = "0.4.27"

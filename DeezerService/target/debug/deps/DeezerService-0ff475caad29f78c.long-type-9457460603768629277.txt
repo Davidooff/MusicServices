@@ -1,0 +1,2 @@
+fn(axum::extract::Path<std::string::String>, SharedState) -> impl Future<Output = Result<impl IntoResponse, StatusCode>> {get_track_remix}
+fn(axum::extract::Path<std::string::String>, SharedState) -> impl Future<Output = Result<impl IntoResponse, StatusCode>> {get_track_remix}: Handler<_, _>
