@@ -36,7 +36,7 @@ async fn main() {
     let shared_state = SharedState { deezer: Deezer::new(arl) };
     
     let app = Router::new()
-        .route("/track/{search_query}", get(get_track_page))
+        .route("/track/{id}", get(get_track_page))
         .route("/mix/{id}", get(get_track_remix)).with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();

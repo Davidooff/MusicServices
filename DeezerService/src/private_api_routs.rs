@@ -30,15 +30,8 @@ pub async fn get_track_remix(Path(id): Path<String>, State(state): State<SharedS
 
 pub async fn get_track_page(Path(id): Path<String>, State(state): State<SharedState>) -> Result<impl IntoResponse, StatusCode> {
     let deezer = state.deezer.clone();
-    
-    let req_body = format!("{{\"sng_id\": {}, \"start_with_input_track: true\"}}", id);
-
-    let res = deezer.call(
-        Method::POST,
-        "deezer.pageTrack",
-        true,
-        Some(req_body)
-    ).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let res = deezer.get_track_page(id).await
+        .map_err(|e| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(res))
 }

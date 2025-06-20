@@ -85,7 +85,7 @@ pub async fn get_stream(
     
     
     // If track added to db run in concurent
-    let (chunk_tokens, listening_res) = tokio::join!(
+    let (chunk_tokens, _) = tokio::join!(
         soundcloud.get_chunks(&url_with_chunks),
         // Выполняем запись прослушивания только если добавление трека было успешным
         async {
