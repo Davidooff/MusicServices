@@ -3,30 +3,28 @@ use aws_sdk_s3::config::{Credentials, Region};
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 
 pub async fn new_s3_client(url: &str, buckets: Vec<&str>) -> Client {
-    // For local MinIO, region can be arbitrary, but "us-east-1" is a safe default.
     let region = Region::new("us-east-1");
 
-    // Create a credentials provider.
     let credentials = Credentials::new(
-        "minioadmin",     // Access key
-        "minioadmin",     // Secret key
-        None,             // Session token
-        None,             // Expiration
-        "Static",         // Provider name
+        "minioadmin",
+        "minioadmin",
+        None,
+        None,
+        "Static",
     );
 
     // Build the AWS SDK config with all necessary settings for MinIO.
     let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(region)
-        .credentials_provider(credentials)
-        .endpoint_url(url)
-        .load()
-        .await;
+      .region(region)
+      .credentials_provider(credentials)
+      .endpoint_url(url)
+      .load()
+      .await;
 
     // Create the S3 client with force_path_style enabled.
     let s3_config = aws_sdk_s3::config::Builder::from(&config)
-        .force_path_style(true)
-        .build();
+      .force_path_style(true)
+      .build();
 
     let client = Client::from_conf(s3_config);
 
@@ -50,4 +48,6 @@ pub async fn new_s3_client(url: &str, buckets: Vec<&str>) -> Client {
     }
 
     client
+
+
 }

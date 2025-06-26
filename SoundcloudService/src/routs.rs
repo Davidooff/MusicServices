@@ -1,4 +1,5 @@
 use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_smithy_types::body::SdkBody;
@@ -8,7 +9,7 @@ use axum::http::{header, Response, StatusCode};
 use axum::Json;
 use axum::response::IntoResponse;
 use bytes::Bytes;
-use futures::{stream, TryFutureExt};
+use futures::{stream, TryFutureExt, TryStream};
 use futures::TryStreamExt;
 use futures::StreamExt;
 use serde::Deserialize;
@@ -16,6 +17,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use crate::{SharedState};
 use crate::postgres_service::{AuthorInput, TrackInput};
+use tokio_util::io::ReaderStream;
 
 #[derive(Deserialize, Debug)]
 pub struct SearchParams {
@@ -44,8 +46,6 @@ pub async fn get_tracks_data(Path(ids): Path<String>, State(state): State<Arc<Sh
         let ti = TrackInput::from(track);
         let ai = AuthorInput::from(track);
 
-        let artwork_url_ref = track.artwork_url.as_deref().unwrap_or("");
-
         // This call remains the same
         postgre.add_track(&ti, &ai).await.expect("failed to add track");
     }
@@ -58,9 +58,33 @@ pub async fn get_stream(
     Path(id): Path<String>,
     State(state): State<Arc<SharedState>>
 ) -> Result<Response<Body>, StatusCode> {
+    let s3 = state.s3_client.clone();
+
+
+    let key = format!("tracks/{}.m3u8", id);
+    if let Ok(mut file) = s3.get_object().bucket("soundcloud").key(key).send().await {
+        let async_read = file.body.into_async_read();
+        let stream = ReaderStream::new(async_read);
+        
+        let body = Body::from_stream(stream);
+        let response = Response::builder()
+          .status(StatusCode::OK)
+          .header(header::CONTENT_TYPE, "application/octet-stream")
+          .header(
+              header::CONTENT_DISPOSITION,
+              "attachment; filename=\"combined_data.m3u8\"",
+          )
+          .body(body)
+          .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        println!("response from s3");
+
+        return Ok(response);
+    }
+
+
     let soundcloud = state.soundcloud_api.clone();
     let postgre = state.postgres_db.clone();
-    let s3 = state.s3_client.clone();
 
 
     
@@ -85,12 +109,12 @@ pub async fn get_stream(
     
     
     // If track added to db run in concurent
-    let (chunk_tokens, listening_res) = tokio::join!(
+    let (chunk_tokens, _) = tokio::join!(
         soundcloud.get_chunks(&url_with_chunks),
         // Выполняем запись прослушивания только если добавление трека было успешным
         async {
             if added_track.is_ok() {
-                postgre.add_listening(track.id).await
+                postgre.record_listening(track.id).await
             } else {
                 // Если трек не был добавлен, просто возвращаем Ok, чтобы не вызывать ошибку в join!
                 Ok(false) 
@@ -120,7 +144,7 @@ pub async fn get_stream(
                 acc
             })
             .await;
-        
+
         
         let byte_stream = ByteStream::from(collected);
         // PutObject can take a streaming body:

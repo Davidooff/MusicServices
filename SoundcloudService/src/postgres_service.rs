@@ -127,8 +127,8 @@ impl PostgresDb {
         Ok(track)
     }
     
-    pub async fn add_listening(&self, id: i32) -> Result<bool, Box<dyn Error + Send + Sync>> {
-        let was_inserted: bool = sqlx::query_scalar("SELECT record_listen($1)")
+    pub async fn record_listening(&self, id: i32) -> Result<bool, Box<dyn Error + Send + Sync>> {
+        let was_inserted: bool = sqlx::query_scalar("SELECT record_listen_deezer($1)")
             .bind(id)       // Привязываем track_id к параметру $1
             .fetch_one(&self.pool)      // Выполняем запрос и ожидаем ровно одну строку
             .await?;              // Ожидаем завершения и обрабатываем возможные ошибки I/O

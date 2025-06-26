@@ -145,23 +145,17 @@ impl SoundCloudApi {
     }
 
     pub async fn stream_chunk(&self, url: String) -> ByteStream {
-        // Use the ? operator to propagate errors instead of panicking.
-        // If send() fails, this function will immediately return an Err.
         let response = self.client
             .get(url)
             .send()
             .await.unwrap();
 
-
-        // The rest of your logic is good, just wrap the final stream in Ok().
-        // Note: The error in bytes_stream is reqwest::Error. We map it to io::Error
-        // to match the ByteStream definition.
+        
         let stream = response
             .bytes_stream()
             .map_err(|e| std::io::Error::new(ErrorKind::Other, e)) // A better mapping
             .boxed();
-
-        // Wrap the successful result in Ok()
+        
         stream
     }
 }
