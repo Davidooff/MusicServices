@@ -4,6 +4,9 @@ use serde_json::{self, Value};
 use reqwest::{ Method, Client, Url};
 use reqwest::cookie::Jar;
 use std::sync::Arc;
+use aws_sdk_s3::config::http::HttpResponse;
+use aws_sdk_s3::error::SdkError;
+use aws_sdk_s3::operation::put_object::PutObjectError;
 use axum::body::Body;
 use axum::extract::{FromRef, Path, State};
 use axum::http::{Response, StatusCode};
@@ -71,6 +74,12 @@ pub enum ApiError {
 
     #[error("A valid API token is required")]
     TokenRequired(String), // A specific, typed error for our retry logic
+
+    #[error("A valid API token is required")]
+    SdkStreamReadError(String), // A
+
+    #[error("A valid API token is required")]
+    SdkLoadError(#[from] SdkError<PutObjectError, HttpResponse>), // A specific, typed error for our retry logic
 }
 
 
@@ -375,8 +384,8 @@ impl Deezer {
         Ok(url.to_string())
     }
 
-    pub async fn get_stream(&self, id: String, track_token: Option<String>) -> Result<ReceiverStream<Result<Vec<u8>, ApiError>>, ApiError> {
-        let key = Self::generate_blowfish_key(&id);
+    pub async fn get_stream(&self, id: &str, track_token: Option<String>) -> Result<ReceiverStream<Result<Vec<u8>, ApiError>>, ApiError> {
+        let key = Self::generate_blowfish_key(id);
 
         let (tx, rx) = mpsc::channel(8);
 
@@ -384,7 +393,7 @@ impl Deezer {
         let self_s = self.clone();
         let token = match track_token {
             Some(url) => url,
-            None => self.get_track_page(&id).await?.track_token
+            None => self.get_track_page(id).await?.track_token
         };
 
         tokio::spawn(async move {

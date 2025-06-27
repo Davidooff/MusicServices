@@ -161,7 +161,7 @@ impl PostgresDb {
   }
   
   pub async fn record_listening(&self, id: i32) -> Result<bool, sqlx::Error> {
-    let is_added: bool = sqlx::query_scalar("SELECT add_listening($1)")
+    let is_added: bool = sqlx::query_scalar("SELECT record_listen_deezer($1)")
       .bind(id)
       .fetch_one(&self.pool)
       .await?;

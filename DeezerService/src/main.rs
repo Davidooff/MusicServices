@@ -14,7 +14,7 @@ mod postgres_service;
 mod s3_client;
 
 use crate::deezer::Deezer;
-use crate::private_api_routs::{get_album, get_stream, get_track_page, get_track_remix};
+use crate::private_api_routs::{get_album, get_stream, get_track_page, get_track_remix, play};
 
 use std::env;
 use dotenv::dotenv;
@@ -41,6 +41,7 @@ async fn main() {
     let app = Router::new()
         .route("/track/{id}", get(get_track_page))
         .route("/stream/{id}", get(get_stream))
+        .route("/listen/{id}", get(play))
         .route("/album/{id}", get(get_album))
         .route("/mix/{id}", get(get_track_remix)).with_state(shared_state);
 

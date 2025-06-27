@@ -1,3 +1,4 @@
+use std::io::{Error, ErrorKind};
 use axum::body::Body;
 use axum::extract::{FromRef, Path, State};
 use axum::http::{header, Method, Response, StatusCode};
@@ -45,14 +46,12 @@ pub async fn get_track_page(Path(id): Path<String>, State(state): State<SharedSt
     Ok(Json(res))
 }
 
-// pub(crate) type BlowfishCbcDec = cbc::Decryptor<Blowfish>;
-
 pub async fn get_stream(
     Path(id): Path<String>,
     State(state): State<SharedState>,
 ) -> Result<Response<Body>, StatusCode> {
     let deezer = state.deezer.clone();
-    let stream = deezer.get_stream(id, None).await.map_err(|e| {
+    let stream = deezer.get_stream(&id, None).await.map_err(|e| {
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -84,7 +83,7 @@ impl FromRef<AlbumHeader> for AlbumInput {
     }
 }
 
-pub async fn get_album_and_add_to_db(id: String, state: SharedState) -> Result<Album, StatusCode> {
+pub async fn get_album_and_add_to_db(id: String, state: &SharedState) -> Result<Album, StatusCode> {
     let deezer = state.deezer.clone();
     let postgres = state.postgres_db.clone();
 
@@ -98,10 +97,10 @@ pub async fn get_album_and_add_to_db(id: String, state: SharedState) -> Result<A
 
 
 pub async fn get_album(Path(id): Path<String>, State(state): State<SharedState>) -> Result<impl IntoResponse, StatusCode> {
-    Ok(Json(get_album_and_add_to_db(id, state).await?))
+    Ok(Json(get_album_and_add_to_db(id, &state).await?))
 }
 
-pub async fn record_listening(state: SharedState, id: i32, alb_id: Option<String>) -> Result<bool, StatusCode> {
+pub async fn record_listening(state: &SharedState, id: i32, alb_id: Option<String>) -> Result<bool, StatusCode> {
     let postgres = state.postgres_db.clone();
 
     let record = postgres.record_listening(id).await.map_err(|e| {
@@ -135,11 +134,11 @@ pub async fn record_listening(state: SharedState, id: i32, alb_id: Option<String
 }
 
 
-const FLAC: &str = "flac";
-const MP3: &str = "mp3";
+pub(crate) const FLAC: &str = "flac";
+pub(crate) const MP3: &str = "mp3";
 
 
-pub async fn create_stream_from_body(body: Body, data_fromat: SongFormat) -> Result<Response<Body>, StatusCode> {
+pub fn create_stream_from_body(body: Body, data_fromat: SongFormat) -> Result<Response<Body>, StatusCode> {
     let format = match data_fromat {
         SongFormat::FLAC => FLAC,
         SongFormat::MP3 => MP3,
@@ -164,6 +163,7 @@ pub async fn create_stream_from_body(body: Body, data_fromat: SongFormat) -> Res
 }
 
 
+
 pub async fn play(Path(id): Path<String>, State(state): State<SharedState>) -> Result<Response<Body>, StatusCode> {
     let state_c =  state.clone();
     let deezer = state.deezer.clone();
@@ -175,13 +175,13 @@ pub async fn play(Path(id): Path<String>, State(state): State<SharedState>) -> R
 
     match s3.try_get_song(&id).await {
         Ok(stream) => {
-            let is_recorded = record_listening(state_c, id_i, None).await;
-
+            record_listening(&state_c, id_i, None).await;
             let stream = stream.1.body.into_async_read();
             let stream = ReaderStream::new(stream);
             let body = Body::from_stream(stream);
 
-            create_stream_from_body(body, SongFormat::FLAC).await
+
+            create_stream_from_body(body, SongFormat::FLAC)
         }
         Err(()) => {
             let track_data = deezer.get_track_page(&id).await.map_err(|e| {
@@ -190,18 +190,52 @@ pub async fn play(Path(id): Path<String>, State(state): State<SharedState>) -> R
             })?;
             
             let (stream, record) = join!{
-                deezer.get_stream(id, Some(track_data.track_token)),
-                record_listening(state_c.clone(), id_i, Some(track_data.alb_id))
+                deezer.get_stream(&id, Some(track_data.track_token)),
+                record_listening(&state_c, id_i, Some(track_data.alb_id))
             };
             
             let stream = stream.map_err(|e| {
-                eprintln!("{}", e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-            
+
+            let (tx, rx) = mpsc::channel(8);
+            let stream = stream.then(move |chunk_result| {
+
+                let tx_clone = tx.clone();
+
+
+                async move {
+                    match &chunk_result {
+                        Ok(data) => {
+                            // Use the clone to send data
+                            if tx_clone.send(Ok(data.clone())).await.is_err() {
+                                eprintln!("S3 receiver has been dropped, can no longer cache song.");
+                            }
+                        }
+                        Err(_) => {
+                            let _ = tx_clone.send(Err(())).await;
+                        }
+                    }
+
+                    chunk_result
+                }
+            });
+
+            tokio::task::spawn(async move {
+                let stream = ReceiverStream::from(rx).boxed();
+
+                // Handle the result!
+                if let Err(e) = s3.save_song(&id, SongFormat::FLAC, stream).await {
+                    eprintln!("Failed to save song {} to S3: {:?}", id, e);
+                } else {
+                    println!("Successfully saved song {} to S3", id);
+                }
+            });
+
+
             let body = Body::from_stream(stream);
 
-            create_stream_from_body(body, SongFormat::FLAC).await
+            create_stream_from_body(body, SongFormat::FLAC)
         }
     }
     

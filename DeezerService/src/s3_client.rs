@@ -1,8 +1,15 @@
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
+use aws_smithy_types::byte_stream::ByteStream;
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
-use crate::deezer::SongFormat;
+use axum_core::__private::tracing::log;
+use futures::{StreamExt, TryStreamExt};
+use futures::stream::BoxStream;
+use tokio::sync::mpsc::Receiver;
+use crate::deezer::{ApiError, SongFormat};
+use tokio_stream::wrappers::ReceiverStream;
+
 
 #[derive(Debug, Clone)] 
 pub struct S3Client(Client);
@@ -63,11 +70,39 @@ impl S3Client {
     // }
     let key = format!("tracks/{}.flac", id);
     
-    if let Ok(file) = self.0.get_object().bucket("soundcloud").key(key).send().await {
+    if let Ok(file) = self.0.get_object().bucket("deezer").key(key).send().await {
       return Ok((SongFormat::FLAC, file))
     }
     
     Err(())
+  }
+
+  pub async fn save_song(&self, id: &str, format: SongFormat, data: BoxStream<'static, Result<Vec<u8>, ()>>) -> Result<(), ApiError> {
+    // let data = ReceiverStream::new(data);
+    let initial_vec: Vec<u8> = Vec::new();
+    let data: Vec<u8> = data.try_fold(initial_vec, |mut acc, item_vec| async move {
+      acc.extend(item_vec);
+      Ok(acc)
+    }).await.map_err(|e| {
+      ApiError::SdkStreamReadError(id.to_string())
+    })?;
+
+    let format = match format {
+      SongFormat::FLAC => crate::private_api_routs::FLAC,
+      SongFormat::MP3 => crate::private_api_routs::MP3,
+    };
+
+    let key = format!("tracks/{}.{}", id, format);
+
+    let byte_stream = ByteStream::from(data);
+    self.0.put_object()
+      .bucket("deezer")
+      .key(key)
+      .body(byte_stream)
+      .send()
+      .await?;
+
+    Ok(())
   }
 }
 
